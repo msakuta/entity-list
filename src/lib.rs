@@ -19,10 +19,10 @@ pub struct EntityList(Vec<EntityEntry>);
 
 impl EntityList {
     fn add(&mut self, entity: Entity) -> EntityId {
-        for i in 0..self.0.len() {
-            if self.0[i].entity.is_none() {
-                self.0[i].entity = Some(entity);
-                self.0[i].gen += 1;
+        for (i, entry) in self.0.iter_mut().enumerate() {
+            if entry.entity.is_none() {
+                entry.entity = Some(entity);
+                entry.gen += 1;
                 return EntityId {
                     id: i as u32,
                     gen: self.0[i].gen,
