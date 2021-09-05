@@ -6,7 +6,7 @@ pub struct EntityId {
 
 #[derive(Debug, PartialEq, Eq)]
 struct Entity {
-    // ...
+    name: &'static str,
 }
 
 struct EntityEntry {
@@ -55,6 +55,16 @@ impl EntityList {
             }
         })
     }
+
+    fn get_mut(&mut self, id: EntityId) -> Option<&mut Entity> {
+        self.0.get_mut(id.id as usize).and_then(|e| {
+            if e.gen == id.gen {
+                e.entity.as_mut()
+            } else {
+                None
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -63,19 +73,24 @@ mod tests {
     #[test]
     fn it_works() {
         let mut el = EntityList::default();
-        let a = el.add(Entity {});
-        let b = el.add(Entity {});
-        let c = el.add(Entity {});
+        let a = el.add(Entity { name: "a" });
+        let b = el.add(Entity { name: "b" });
+        let c = el.add(Entity { name: "c" });
         assert_eq!(b, EntityId { id: 1, gen: 0 });
         el.remove(b);
-        assert_eq!(el.get(a), Some(&Entity {}));
+        assert_eq!(el.get(a), Some(&Entity { name: "a" }));
         assert_eq!(el.get(b), None);
-        assert_eq!(el.get(c), Some(&Entity {}));
+        assert_eq!(el.get(c), Some(&Entity { name: "c" }));
         assert_eq!(el.0.len(), 3);
 
-        let d = el.add(Entity {});
+        let d = el.add(Entity { name: "d" });
         assert_eq!(d, EntityId { id: 1, gen: 1 });
-        assert_eq!(el.get(d), Some(&Entity {}));
+        assert_eq!(el.get(d), Some(&Entity { name: "d" }));
         assert_eq!(el.0.len(), 3);
+
+        if let Some(a) = el.get_mut(a) {
+            a.name = "A";
+        }
+        assert_eq!(el.get(a), Some(&Entity { name: "A" }));
     }
 }
