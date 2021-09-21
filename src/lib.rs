@@ -14,6 +14,16 @@ struct EntityEntry {
     entity: Option<Entity>,
 }
 
+impl EntityEntry {
+    fn get_mut(&mut self, id: EntityId) -> Option<&mut Entity> {
+        if self.gen == id.gen {
+            self.entity.as_mut()
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct EntityList(Vec<EntityEntry>);
 
@@ -25,7 +35,7 @@ impl EntityList {
                 entry.gen += 1;
                 return EntityId {
                     id: i as u32,
-                    gen: self.0[i].gen,
+                    gen: entry.gen,
                 };
             }
         }
@@ -74,17 +84,38 @@ impl EntityList {
         if a.id < b.id {
             let (left, right) = self.0.split_at_mut(b.id as usize);
             (
-                left[a.id as usize].entity.as_mut().map(|s| s),
-                right.first_mut().and_then(|s| s.entity.as_mut()),
+                left.get_mut(a.id as usize)
+                    .and_then(|entry| entry.get_mut(a)),
+                right.first_mut().and_then(|s| s.get_mut(b)),
             )
         } else if b.id < a.id {
             let (left, right) = self.0.split_at_mut(a.id as usize);
             (
-                right.first_mut().and_then(|s| s.entity.as_mut()),
-                left[b.id as usize].entity.as_mut().map(|s| s),
+                right.first_mut().and_then(|s| s.get_mut(a)),
+                left.get_mut(b.id as usize)
+                    .and_then(|entry| entry.get_mut(b)),
+            )
+            // The following cases are when a and b points to the same index. In that case we want to return
+            // only the one with valid generation.
+        } else if self
+            .0
+            .get(a.id as usize)
+            .map(|a_obj| a.gen != a_obj.gen)
+            .unwrap_or(true)
+        {
+            (
+                None,
+                self.0
+                    .get_mut(b.id as usize)
+                    .and_then(|entry| entry.get_mut(b)),
             )
         } else {
-            (None, None)
+            (
+                self.0
+                    .get_mut(a.id as usize)
+                    .and_then(|entry| entry.get_mut(a)),
+                None,
+            )
         }
     }
 }
@@ -145,5 +176,19 @@ mod tests {
                 Some(&mut Entity { name: "a" })
             )
         );
+
+        el.remove(a);
+
+        let d = el.add(Entity { name: "d" });
+
+        assert_eq!(
+            el.get_pair_mut(d, a),
+            (Some(&mut Entity { name: "d" }), None)
+        );
+
+        el.remove(d);
+
+        let e = el.add(Entity { name: "e" });
+        assert_eq!(el.get_pair_mut(d, a), (None, None));
     }
 }
