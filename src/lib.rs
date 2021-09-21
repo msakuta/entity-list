@@ -65,11 +65,40 @@ impl EntityList {
             }
         })
     }
+
+    fn get_pair_mut(
+        &mut self,
+        a: EntityId,
+        b: EntityId,
+    ) -> (Option<&mut Entity>, Option<&mut Entity>) {
+        if a.id < b.id {
+            let (left, right) = self.0.split_at_mut(b.id as usize);
+            (
+                left[a.id as usize].entity.as_mut().map(|s| s),
+                right
+                    .first_mut()
+                    .map(|s| Some(s.entity.as_mut()?))
+                    .flatten(),
+            )
+        } else if b.id < a.id {
+            let (left, right) = self.0.split_at_mut(a.id as usize);
+            (
+                right
+                    .first_mut()
+                    .map(|s| Some(s.entity.as_mut()?))
+                    .flatten(),
+                left[b.id as usize].entity.as_mut().map(|s| s),
+            )
+        } else {
+            (None, None)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Entity, EntityId, EntityList};
+
     #[test]
     fn it_works() {
         let mut el = EntityList::default();
@@ -92,5 +121,35 @@ mod tests {
             a.name = "A";
         }
         assert_eq!(el.get(a), Some(&Entity { name: "A" }));
+    }
+
+    #[test]
+    fn get_pair() {
+        let mut el = EntityList::default();
+        let a = el.add(Entity { name: "a" });
+        let b = el.add(Entity { name: "b" });
+        let c = el.add(Entity { name: "c" });
+
+        assert_eq!(
+            el.get_pair_mut(a, b),
+            (
+                Some(&mut Entity { name: "a" }),
+                Some(&mut Entity { name: "b" })
+            )
+        );
+        assert_eq!(
+            el.get_pair_mut(b, c),
+            (
+                Some(&mut Entity { name: "b" }),
+                Some(&mut Entity { name: "c" })
+            )
+        );
+        assert_eq!(
+            el.get_pair_mut(c, a),
+            (
+                Some(&mut Entity { name: "c" }),
+                Some(&mut Entity { name: "a" })
+            )
+        );
     }
 }
