@@ -75,18 +75,12 @@ impl EntityList {
             let (left, right) = self.0.split_at_mut(b.id as usize);
             (
                 left[a.id as usize].entity.as_mut().map(|s| s),
-                right
-                    .first_mut()
-                    .map(|s| Some(s.entity.as_mut()?))
-                    .flatten(),
+                right.first_mut().and_then(|s| s.entity.as_mut()),
             )
         } else if b.id < a.id {
             let (left, right) = self.0.split_at_mut(a.id as usize);
             (
-                right
-                    .first_mut()
-                    .map(|s| Some(s.entity.as_mut()?))
-                    .flatten(),
+                right.first_mut().and_then(|s| s.entity.as_mut()),
                 left[b.id as usize].entity.as_mut().map(|s| s),
             )
         } else {
