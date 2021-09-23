@@ -1,6 +1,7 @@
 use crate::{Entity, EntityEntry, EntityId};
 // use std::iter::IntoIterator;
 
+#[derive(Default)]
 struct EntitySlice<'a> {
     start: usize,
     slice: &'a mut [EntityEntry],
@@ -14,7 +15,7 @@ impl<'a> EntitySlice<'a> {
     /// but in this case what we need is the exclusivity, not the mutability, to ensure that
     /// our internal mutable slice would not have aliases.
     ///
-    /// Lifetime annotation is still a bit weird, it should return StructureSlice<'a> since the
+    /// Lifetime annotation is still a bit weird, it should return EntitySlice<'a> since the
     /// underlying EntityEntry lifetime should not change by making a slice to it, but
     /// somehow it fails to compile if I do.
     fn clone(&mut self) -> EntitySlice {
@@ -59,8 +60,7 @@ impl<'a> EntityDynIter<'a> {
         split_idx: usize,
     ) -> Option<(&'a mut EntityEntry, Self)> {
         let (left, right) = source.split_at_mut(split_idx);
-        let (center, right) = right
-            .split_first_mut()?;
+        let (center, right) = right.split_first_mut()?;
         Some((
             center,
             Self(vec![
@@ -97,6 +97,30 @@ impl<'a> EntityDynIter<'a> {
                 ))
             })
     }
+
+    pub(crate) fn exclude(&mut self, idx: usize) -> Option<&mut EntityEntry> {
+        if let Some((slice_idx, _)) = self
+            .0
+            .iter_mut()
+            .enumerate()
+            .find(|(_, slice)| slice.start <= idx && idx < slice.start + slice.slice.len())
+        {
+            let slice = std::mem::take(&mut self.0[slice_idx]);
+            let (left, right) = slice.slice.split_at_mut(idx - slice.start);
+            let (center, right) = right.split_first_mut()?;
+            self.0[slice_idx] = EntitySlice {
+                start: slice.start,
+                slice: left,
+            };
+            self.0.push(EntitySlice {
+                start: idx + 1,
+                slice: right,
+            });
+            Some(center)
+        } else {
+            None
+        }
+    }
 }
 
 // struct EntityIter<'d, 'a> {
@@ -124,7 +148,7 @@ impl<'a> EntityDynIter<'a> {
 //     type Item = &'a EntityEntry;
 //     type IntoIter = EntityIter<'d, 'a>;
 //     fn into_iter(self) -> Self::IntoIter {
-//         EntityIter{ 
+//         EntityIter{
 //             dyn_iter: self,
 //             slice: 0,
 //             item: 0,
@@ -170,6 +194,29 @@ mod tests {
             assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
             assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((b, "b")));
             assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((d, "d")));
+            assert_eq!(iter.next(), None);
+        }
+    }
+
+    #[test]
+    fn slice_multi_split() {
+        let mut el = EntityList::default();
+        let a = el.add(Entity { name: "a" });
+        let _b = el.add(Entity { name: "b" });
+        let c = el.add(Entity { name: "c" });
+        let _d = el.add(Entity { name: "d" });
+        let e = el.add(Entity { name: "e" });
+
+        let (split_b, mut dyn_iter) = EntityDynIter::new(&mut el.0, 1).unwrap();
+        let split_d = dyn_iter.exclude(3).unwrap();
+        assert_eq!(split_b.entity.as_ref().map(|e| e.name), Some("b"));
+        assert_eq!(split_d.entity.as_ref().map(|e| e.name), Some("d"));
+        // Test repeatability
+        for _ in 0..2 {
+            let mut iter = dyn_iter.dyn_iter_id();
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((c, "c")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((e, "e")));
             assert_eq!(iter.next(), None);
         }
     }

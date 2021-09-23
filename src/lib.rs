@@ -1,5 +1,5 @@
-mod iter;
 mod dyn_iter;
+mod iter;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct EntityId {
