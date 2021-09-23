@@ -1,4 +1,4 @@
-use crate::{Entity, EntityEntry, EntityId};
+use crate::{Entity, EntityEntry, EntityId, EntityList};
 // use std::iter::IntoIterator;
 
 #[derive(Default)]
@@ -48,18 +48,18 @@ impl<'a> EntitySlice<'a> {
 pub(crate) struct EntityDynIter<'a>(Vec<EntitySlice<'a>>);
 
 impl<'a> EntityDynIter<'a> {
-    pub(crate) fn new_all(source: &'a mut [EntityEntry]) -> Self {
+    pub(crate) fn new_all(source: &'a mut EntityList) -> Self {
         Self(vec![EntitySlice {
             start: 0,
-            slice: source,
+            slice: &mut source.0,
         }])
     }
 
-    pub(crate) fn new(
-        source: &'a mut [EntityEntry],
+    pub(crate) fn new_split(
+        source: &'a mut EntityList,
         split_idx: usize,
     ) -> Option<(&'a mut EntityEntry, Self)> {
-        let (left, right) = source.split_at_mut(split_idx);
+        let (left, right) = source.0.split_at_mut(split_idx);
         let (center, right) = right.split_first_mut()?;
         Some((
             center,
@@ -167,7 +167,7 @@ mod tests {
         let b = el.add(Entity { name: "b" });
         let c = el.add(Entity { name: "c" });
 
-        let dyn_iter = EntityDynIter::new_all(&mut el.0);
+        let dyn_iter = EntityDynIter::new_all(&mut el);
         // Test repeatability
         for _ in 0..2 {
             let mut iter = dyn_iter.dyn_iter_id();
@@ -183,10 +183,10 @@ mod tests {
         let mut el = EntityList::default();
         let a = el.add(Entity { name: "a" });
         let b = el.add(Entity { name: "b" });
-        let c = el.add(Entity { name: "c" });
+        let _c = el.add(Entity { name: "c" });
         let d = el.add(Entity { name: "d" });
 
-        let (split_c, dyn_iter) = EntityDynIter::new(&mut el.0, 2).unwrap();
+        let (split_c, dyn_iter) = EntityDynIter::new_split(&mut el, 2).unwrap();
         assert_eq!(split_c.entity.as_ref().map(|e| e.name), Some("c"));
         // Test repeatability
         for _ in 0..2 {
@@ -207,7 +207,7 @@ mod tests {
         let _d = el.add(Entity { name: "d" });
         let e = el.add(Entity { name: "e" });
 
-        let (split_b, mut dyn_iter) = EntityDynIter::new(&mut el.0, 1).unwrap();
+        let (split_b, mut dyn_iter) = EntityDynIter::new_split(&mut el, 1).unwrap();
         let split_d = dyn_iter.exclude(3).unwrap();
         assert_eq!(split_b.entity.as_ref().map(|e| e.name), Some("b"));
         assert_eq!(split_d.entity.as_ref().map(|e| e.name), Some("d"));

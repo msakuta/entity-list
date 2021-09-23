@@ -191,7 +191,7 @@ mod tests {
 
         el.remove(d);
 
-        let e = el.add(Entity { name: "e" });
+        let _e = el.add(Entity { name: "e" });
         assert_eq!(el.get_pair_mut(d, a), (None, None));
     }
 }
