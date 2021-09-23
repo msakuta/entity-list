@@ -128,7 +128,7 @@ impl<'a> EntityDynIter<'a> {
         }
     }
 
-    pub(crate) fn exclude_id<'b>(
+    pub(crate) fn exclude_copy<'b>(
         &'b mut self,
         id: EntityId,
     ) -> Option<(Option<&'b mut Entity>, EntityDynIter<'b>)>
@@ -290,7 +290,7 @@ mod tests {
         let e = el.add(Entity { name: "e" });
 
         let (split_b, mut dyn_iter) = EntityDynIter::new_split(&mut el, 1).unwrap();
-        let (split_d, dyn_iter2) = dyn_iter.exclude_id(d).unwrap();
+        let (split_d, dyn_iter2) = dyn_iter.exclude_copy(d).unwrap();
         assert_eq!(split_b.entity.as_ref().map(|e| e.name), Some("b"));
         assert_eq!(split_d.map(|e| e.name), Some("d"));
         // Test repeatability
