@@ -98,13 +98,19 @@ impl<'a> EntityDynIter<'a> {
             })
     }
 
-    pub(crate) fn exclude(&mut self, idx: usize) -> Option<&mut EntityEntry> {
+    pub(crate) fn exclude(&mut self, id: EntityId) -> Option<&mut Entity> {
+        let idx = id.id as usize;
         if let Some((slice_idx, _)) = self
             .0
             .iter_mut()
             .enumerate()
             .find(|(_, slice)| slice.start <= idx && idx < slice.start + slice.slice.len())
         {
+            let slice_borrow = &self.0[slice_idx];
+            let entry = &slice_borrow.slice[idx - slice_borrow.start];
+            if entry.gen != id.gen || entry.entity.is_none() {
+                return None;
+            }
             let slice = std::mem::take(&mut self.0[slice_idx]);
             let (left, right) = slice.slice.split_at_mut(idx - slice.start);
             let (center, right) = right.split_first_mut()?;
@@ -116,7 +122,7 @@ impl<'a> EntityDynIter<'a> {
                 start: idx + 1,
                 slice: right,
             });
-            Some(center)
+            center.entity.as_mut()
         } else {
             None
         }
@@ -257,13 +263,13 @@ mod tests {
         let a = el.add(Entity { name: "a" });
         let _b = el.add(Entity { name: "b" });
         let c = el.add(Entity { name: "c" });
-        let _d = el.add(Entity { name: "d" });
+        let d = el.add(Entity { name: "d" });
         let e = el.add(Entity { name: "e" });
 
         let (split_b, mut dyn_iter) = EntityDynIter::new_split(&mut el, 1).unwrap();
-        let split_d = dyn_iter.exclude(3).unwrap();
+        let split_d = dyn_iter.exclude(d);
         assert_eq!(split_b.entity.as_ref().map(|e| e.name), Some("b"));
-        assert_eq!(split_d.entity.as_ref().map(|e| e.name), Some("d"));
+        assert_eq!(split_d.map(|e| e.name), Some("d"));
         // Test repeatability
         for _ in 0..2 {
             let mut iter = dyn_iter.dyn_iter_id();
