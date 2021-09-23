@@ -121,6 +121,59 @@ impl<'a> EntityDynIter<'a> {
             None
         }
     }
+
+    pub(crate) fn exclude_id<'b>(
+        &'b mut self,
+        id: EntityId,
+    ) -> Option<(Option<&'b mut Entity>, EntityDynIter<'b>)>
+    where
+        'a: 'b,
+    {
+        let idx = id.id as usize;
+        if let Some((slice_idx, _)) = self
+            .0
+            .iter()
+            .enumerate()
+            .find(|(_, slice)| slice.start <= idx && idx < slice.start + slice.slice.len())
+        {
+            let slice_borrow = &self.0[slice_idx];
+            let entry = &slice_borrow.slice[idx - slice_borrow.start];
+            if entry.gen != id.gen || entry.entity.is_none() {
+                return Some((
+                    None,
+                    EntityDynIter(self.0.iter_mut().map(|i| i.clone()).collect()),
+                ));
+            }
+
+            // [slice_0] [slice_1] .. [left..center..right] .. [slice_i+1] .. [slice_n]
+            //   to
+            // [slice_0] [slice_1] .. [left] [right] .. [slice_i+1] .. [slice_n]
+            //    and  center
+            let (left_slices, right_slices) = self.0.split_at_mut(slice_idx);
+            let (slice, right_slices) = right_slices.split_first_mut()?;
+
+            let (left, right) = slice.slice.split_at_mut(idx - slice.start);
+            let (center, right) = right.split_first_mut()?;
+
+            let left_slices = left_slices
+                .iter_mut()
+                .map(|i| i.clone())
+                .collect::<Vec<_>>();
+            let mut slices = left_slices;
+            slices.push(EntitySlice {
+                start: slice.start,
+                slice: left,
+            });
+            slices.push(EntitySlice {
+                start: idx + 1,
+                slice: right,
+            });
+            slices.extend(right_slices.iter_mut().map(|i| i.clone()));
+            Some((center.entity.as_mut(), EntityDynIter(slices)))
+        } else {
+            None
+        }
+    }
 }
 
 // struct EntityIter<'d, 'a> {
@@ -216,6 +269,39 @@ mod tests {
             let mut iter = dyn_iter.dyn_iter_id();
             assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
             assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((c, "c")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((e, "e")));
+            assert_eq!(iter.next(), None);
+        }
+    }
+
+    #[test]
+    fn slice_multi_split_id() {
+        let mut el = EntityList::default();
+        let a = el.add(Entity { name: "a" });
+        let _b = el.add(Entity { name: "b" });
+        let c = el.add(Entity { name: "c" });
+        let d = el.add(Entity { name: "d" });
+        let e = el.add(Entity { name: "e" });
+
+        let (split_b, mut dyn_iter) = EntityDynIter::new_split(&mut el, 1).unwrap();
+        let (split_d, dyn_iter2) = dyn_iter.exclude_id(d).unwrap();
+        assert_eq!(split_b.entity.as_ref().map(|e| e.name), Some("b"));
+        assert_eq!(split_d.map(|e| e.name), Some("d"));
+        // Test repeatability
+        for _ in 0..2 {
+            let mut iter = dyn_iter2.dyn_iter_id();
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((c, "c")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((e, "e")));
+            assert_eq!(iter.next(), None);
+        }
+
+        // Test repeatability
+        for _ in 0..2 {
+            let mut iter = dyn_iter.dyn_iter_id();
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((c, "c")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((d, "d")));
             assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((e, "e")));
             assert_eq!(iter.next(), None);
         }
