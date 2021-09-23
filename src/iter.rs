@@ -1,5 +1,5 @@
-use crate::{Entity, EntityEntry, EntityId, dyn_iter::DynIter};
-use std::iter::IntoIterator;
+use crate::{Entity, EntityEntry, EntityId};
+// use std::iter::IntoIterator;
 
 struct EntitySlice<'a> {
     start: usize,
@@ -15,7 +15,7 @@ impl<'a> EntitySlice<'a> {
     /// our internal mutable slice would not have aliases.
     ///
     /// Lifetime annotation is still a bit weird, it should return StructureSlice<'a> since the
-    /// underlying StructureEntry lifetime should not change by making a slice to it, but
+    /// underlying EntityEntry lifetime should not change by making a slice to it, but
     /// somehow it fails to compile if I do.
     fn clone(&mut self) -> EntitySlice {
         EntitySlice {
@@ -35,7 +35,7 @@ impl<'a> EntitySlice<'a> {
 /// but I'm not sure.
 ///
 /// ```ignore
-/// fn a(structures: &mut [StructureEntry]) {
+/// fn a(structures: &mut [EntityEntry]) {
 ///     let (_, iter) = StructureDynIter::new(&mut structures);
 ///     drop(iter);
 ///     structures[0].dynamic.name();
@@ -52,6 +52,28 @@ impl<'a> EntityDynIter<'a> {
             start: 0,
             slice: source,
         }])
+    }
+
+    pub(crate) fn new(
+        source: &'a mut [EntityEntry],
+        split_idx: usize,
+    ) -> Option<(&'a mut EntityEntry, Self)> {
+        let (left, right) = source.split_at_mut(split_idx);
+        let (center, right) = right
+            .split_first_mut()?;
+        Some((
+            center,
+            Self(vec![
+                EntitySlice {
+                    start: 0,
+                    slice: left,
+                },
+                EntitySlice {
+                    start: split_idx + 1,
+                    slice: right,
+                },
+            ]),
+        ))
     }
 
     pub(crate) fn dyn_iter_id(&self) -> impl Iterator<Item = (EntityId, &Entity)> + '_ {
@@ -112,7 +134,7 @@ impl<'a> EntityDynIter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{EntityDynIter, EntitySlice};
+    use super::EntityDynIter;
     use crate::{Entity, EntityList};
     #[test]
     fn slice_test() {
@@ -122,10 +144,33 @@ mod tests {
         let c = el.add(Entity { name: "c" });
 
         let dyn_iter = EntityDynIter::new_all(&mut el.0);
-        let mut iter = dyn_iter.dyn_iter_id();
-        assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
-        assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((b, "b")));
-        assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((c, "c")));
-        assert_eq!(iter.next(), None);
+        // Test repeatability
+        for _ in 0..2 {
+            let mut iter = dyn_iter.dyn_iter_id();
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((b, "b")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((c, "c")));
+            assert_eq!(iter.next(), None);
+        }
+    }
+
+    #[test]
+    fn slice_split() {
+        let mut el = EntityList::default();
+        let a = el.add(Entity { name: "a" });
+        let b = el.add(Entity { name: "b" });
+        let c = el.add(Entity { name: "c" });
+        let d = el.add(Entity { name: "d" });
+
+        let (split_c, dyn_iter) = EntityDynIter::new(&mut el.0, 2).unwrap();
+        assert_eq!(split_c.entity.as_ref().map(|e| e.name), Some("c"));
+        // Test repeatability
+        for _ in 0..2 {
+            let mut iter = dyn_iter.dyn_iter_id();
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((b, "b")));
+            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((d, "d")));
+            assert_eq!(iter.next(), None);
+        }
     }
 }
