@@ -1,3 +1,4 @@
+use crate::dyn_iter::{DynIter, DynIterMut};
 use crate::{Entity, EntityEntry, EntityId, EntityList};
 // use std::iter::IntoIterator;
 
@@ -31,13 +32,13 @@ impl<'a> EntitySlice<'a> {
 /// It uses a SmallVec of slices, which will put the slices inline into the struct and avoid heap allocation
 /// up to 2 elements. Most of the time, we only need left and right slices, which are inlined.
 /// In rare occasions we want more slices and it will fall back to heap allocation.
-/// This design requires a little inconvenience in exchange. That is, explicitly dropping the StructureDynIter before
+/// This design requires a little inconvenience in exchange. That is, explicitly dropping the EntityDynIter before
 /// being able to access the structures pointed to, like the example below. It seems to have something to do with the SmallVec's drop check,
 /// but I'm not sure.
 ///
 /// ```ignore
 /// fn a(structures: &mut [EntityEntry]) {
-///     let (_, iter) = StructureDynIter::new(&mut structures);
+///     let (_, iter) = EntityDynIter::new(&mut structures);
 ///     drop(iter);
 ///     structures[0].dynamic.name();
 /// }
@@ -97,6 +98,31 @@ impl<'a> EntityDynIter<'a> {
                 ))
             })
     }
+
+    // Couldn't get this to compile
+    // pub(crate) fn dyn_iter_mut_id(
+    //     &mut self,
+    // ) -> impl Iterator<Item = (EntityId, &mut Entity)> + '_ {
+    //     self.0
+    //         .iter_mut()
+    //         .flat_map(move |slice| {
+    //             let start = slice.start;
+    //             slice
+    //                 .slice
+    //                 .iter_mut()
+    //                 .enumerate()
+    //                 .map(move |(i, val)| (i + start, val))
+    //         })
+    //         .filter_map(|(id, val)| {
+    //             Some((
+    //                 EntityId {
+    //                     id: id as u32,
+    //                     gen: val.gen,
+    //                 },
+    //                 val.entity.as_mut()?,
+    //             ))
+    //         })
+    // }
 
     pub(crate) fn exclude(&mut self, id: EntityId) -> Option<&mut Entity> {
         let idx = id.id as usize;
@@ -182,6 +208,30 @@ impl<'a> EntityDynIter<'a> {
     }
 }
 
+impl<'a> DynIter for EntityDynIter<'a> {
+    type Item = Entity;
+    fn dyn_iter(&self) -> Box<dyn Iterator<Item = &Self::Item> + '_> {
+        Box::new(
+            self.0
+                .iter()
+                .flat_map(|slice| slice.slice.iter().filter_map(|s| s.entity.as_ref())),
+        )
+    }
+    fn as_dyn_iter(&self) -> &dyn DynIter<Item = Self::Item> {
+        self
+    }
+}
+
+impl<'a> DynIterMut for EntityDynIter<'a> {
+    fn dyn_iter_mut(&mut self) -> Box<dyn Iterator<Item = &mut Self::Item> + '_> {
+        Box::new(
+            self.0
+                .iter_mut()
+                .flat_map(|slice| slice.slice.iter_mut().filter_map(|s| s.entity.as_mut())),
+        )
+    }
+}
+
 // struct EntityIter<'d, 'a> {
 //     dyn_iter: &'d EntityDynIter<'a>,
 //     slice: usize,
@@ -218,7 +268,9 @@ impl<'a> EntityDynIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::EntityDynIter;
+    use crate::dyn_iter::{DynIter, DynIterMut};
     use crate::{Entity, EntityList};
+
     #[test]
     fn slice_test() {
         let mut el = EntityList::default();
@@ -260,24 +312,40 @@ mod tests {
     #[test]
     fn slice_multi_split() {
         let mut el = EntityList::default();
-        let a = el.add(Entity { name: "a" });
+        let _a = el.add(Entity { name: "a" });
         let _b = el.add(Entity { name: "b" });
-        let c = el.add(Entity { name: "c" });
+        let _c = el.add(Entity { name: "c" });
         let d = el.add(Entity { name: "d" });
-        let e = el.add(Entity { name: "e" });
+        let _e = el.add(Entity { name: "e" });
 
         let (split_b, mut dyn_iter) = EntityDynIter::new_split(&mut el, 1).unwrap();
         let split_d = dyn_iter.exclude(d);
         assert_eq!(split_b.entity.as_ref().map(|e| e.name), Some("b"));
         assert_eq!(split_d.map(|e| e.name), Some("d"));
+
         // Test repeatability
         for _ in 0..2 {
-            let mut iter = dyn_iter.dyn_iter_id();
-            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
-            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((c, "c")));
-            assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((e, "e")));
+            let mut iter = dyn_iter.dyn_iter();
+            assert_eq!(iter.next().map(|e| e.name), Some("a"));
+            assert_eq!(iter.next().map(|e| e.name), Some("c"));
+            assert_eq!(iter.next().map(|e| e.name), Some("e"));
             assert_eq!(iter.next(), None);
         }
+
+        // Test repeatability
+        for _ in 0..2 {
+            let mut iter = dyn_iter.dyn_iter_mut();
+            assert_eq!(iter.next().map(|e| e.name), Some("a"));
+            assert_eq!(iter.next().map(|e| e.name), Some("c"));
+            assert_eq!(iter.next().map(|e| e.name), Some("e"));
+            assert_eq!(iter.next(), None);
+        }
+
+        // let mut iter = dyn_iter.dyn_iter_mut_id();
+        // assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((a, "a")));
+        // assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((c, "c")));
+        // assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((e, "e")));
+        // assert_eq!(iter.next(), None);
     }
 
     #[test]
