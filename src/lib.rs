@@ -1,6 +1,8 @@
 mod dyn_iter;
 mod iter;
 
+pub use iter::EntityDynIter;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct EntityId {
     id: u32,

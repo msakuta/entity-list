@@ -1,9 +1,10 @@
 use crate::dyn_iter::{DynIter, DynIterMut};
 use crate::{Entity, EntityEntry, EntityId, EntityList};
+use smallvec::{SmallVec, smallvec};
 // use std::iter::IntoIterator;
 
 #[derive(Default)]
-struct EntitySlice<'a> {
+pub struct EntitySlice<'a> {
     start: usize,
     slice: &'a mut [EntityEntry],
 }
@@ -19,7 +20,7 @@ impl<'a> EntitySlice<'a> {
     /// Lifetime annotation is still a bit weird, it should return EntitySlice<'a> since the
     /// underlying EntityEntry lifetime should not change by making a slice to it, but
     /// somehow it fails to compile if I do.
-    fn clone(&mut self) -> EntitySlice {
+    pub fn clone(&mut self) -> EntitySlice {
         EntitySlice {
             start: self.start,
             slice: self.slice,
@@ -33,24 +34,24 @@ impl<'a> EntitySlice<'a> {
 /// up to 2 elements. Most of the time, we only need left and right slices, which are inlined.
 /// In rare occasions we want more slices and it will fall back to heap allocation.
 /// This design requires a little inconvenience in exchange. That is, explicitly dropping the EntityDynIter before
-/// being able to access the structures pointed to, like the example below. It seems to have something to do with the SmallVec's drop check,
+/// being able to access the entites pointed to, like the example below. It seems to have something to do with the SmallVec's drop check,
 /// but I'm not sure.
 ///
 /// ```ignore
-/// fn a(structures: &mut [EntityEntry]) {
-///     let (_, iter) = EntityDynIter::new(&mut structures);
+/// fn a(entites: &mut [EntityEntry]) {
+///     let (_, iter) = EntityDynIter::new(&mut entites);
 ///     drop(iter);
-///     structures[0].dynamic.name();
+///     entites[0].dynamic.name();
 /// }
 /// ```
 ///
 /// It can access internal object in O(n) where n is the number of slices, not the number of objects.
 /// It is convenient when you want to have mutable reference to two elements in the array at the same time.
-pub(crate) struct EntityDynIter<'a>(Vec<EntitySlice<'a>>);
+pub struct EntityDynIter<'a>(SmallVec<[EntitySlice<'a>; 2]>);
 
 impl<'a> EntityDynIter<'a> {
     pub(crate) fn new_all(source: &'a mut EntityList) -> Self {
-        Self(vec![EntitySlice {
+        Self(smallvec![EntitySlice {
             start: 0,
             slice: &mut source.0,
         }])
@@ -64,7 +65,7 @@ impl<'a> EntityDynIter<'a> {
         let (center, right) = right.split_first_mut()?;
         Some((
             center,
-            Self(vec![
+            Self(smallvec![
                 EntitySlice {
                     start: 0,
                     slice: left,
@@ -190,7 +191,7 @@ impl<'a> EntityDynIter<'a> {
             let left_slices = left_slices
                 .iter_mut()
                 .map(|i| i.clone())
-                .collect::<Vec<_>>();
+                .collect::<SmallVec<_>>();
             let mut slices = left_slices;
             slices.push(EntitySlice {
                 start: slice.start,
@@ -369,6 +370,7 @@ mod tests {
             assert_eq!(iter.next().map(|(id, e)| (id, e.name)), Some((e, "e")));
             assert_eq!(iter.next(), None);
         }
+        drop(dyn_iter2);
 
         // Test repeatability
         for _ in 0..2 {
